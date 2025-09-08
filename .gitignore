@@ -1,0 +1,22 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.db
+
+# Test binary, built with `go test -c`
+*.test
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# env file
+.env
+
+#logs
+logs/*
+
+#python cache
+src/__pycache__/*
+__pycache__/*
