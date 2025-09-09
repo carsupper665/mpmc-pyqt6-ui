@@ -1,7 +1,7 @@
 import sys
-from PyQt6.QtCore import Qt, QEvent
-from PyQt6.QtGui import QPalette, QIcon
-from PyQt6.QtCore import QSize, Qt
+import time
+from PyQt6.QtCore import QObject, QThread, pyqtSignal, pyqtSlot, Qt, QEvent, QTimer, QSize
+from PyQt6.QtGui import QPalette, QIcon, QFont
 from PyQt6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -11,19 +11,38 @@ from PyQt6.QtWidgets import (
     QToolButton,
     QVBoxLayout,
     QWidget,
+    QStackedLayout
 )
 
-from src import constants as c
+from src.constants import *
+from src.logger import get_logger
+
+from ui.custom_title import CustomTitleBar
+from ui.loading import LoadingPage
+
+class Worker(QObject):
+    progress = pyqtSignal(int)
+    finished = pyqtSignal()
+
+    @pyqtSlot()
+    def run(self):
+        for i in range(101):
+            time.sleep(0.05)
+            self.progress.emit(i)
+        self.finished.emit()
 
 # 建立主視窗類別
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, log_level: int = 10, save_log: bool = True):
+        self.LOGGER = get_logger(name=SYSTEM_NAME, level=log_level) # 還須修改
+        self.LOGGER.debug("HI")
         super().__init__()
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.resize(1280, 720)
-        self.rework_window_hit()
+        self.create_main_window()
+        self.set_content_container()
 
-    def rework_window_hit(self):
+    def create_main_window(self):
         self.main_container = QWidget()
         self.main_container.setStyleSheet("background-color: #00081C;")
         self.main_layout = QVBoxLayout(self.main_container)
@@ -37,109 +56,32 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(self.main_container)           # 設定視窗大小
 
-class CustomTitleBar(QWidget):
-    def __init__(self, parent):
-        super().__init__()
-        self.is_parent_max = False
-        self.parent = parent
-        self.setAutoFillBackground(True)
-        self.setBackgroundRole(QPalette.ColorRole.Highlight)
-        self.setFixedHeight(45)
-        self.initial_pos = None
-        self._mouse_pos = None
-        title_bar_layout = QHBoxLayout(self)
-        title_bar_layout.setContentsMargins(1, 1, 1, 1)
-        title_bar_layout.setSpacing(2)
-        self.title = QLabel(f"M。P。M。C", self)
-        self.title.setStyleSheet(
-            """font-weight: bold;
-               border: 2px solid white;
-               border-radius: 12px;
-               margin: 2px;
-               background-color: black;
-            """
-        )
-        self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        if title := parent.windowTitle():
-            self.title.setText(title)
-        title_bar_layout.addWidget(self.title)
-        self.min_button = QToolButton(self)
-        min_icon = QIcon()
-        min_icon.addFile(c.IMAGES_URL + '/min_btn.png')
-        self.min_button.setIcon(min_icon)
-        self.min_button.clicked.connect(self.parent.showMinimized)
+    def set_content_container(self):
+        self.content_container = QWidget()
+        self.content_layout_container = QStackedLayout(self.content_container)
+        self.content_layout_container.setStackingMode(QStackedLayout.StackingMode.StackOne)
 
-        # Max button
-        self.max_button = QToolButton(self)
-        max_icon = QIcon()
-        max_icon.addFile(c.IMAGES_URL + "/max_btn.png")
-        self.max_button.setIcon(max_icon)
-        self.max_button.clicked.connect(self.change_window)
+        loading_page = LoadingPage(self)
+        loading_page.setStyleSheet("background-color: #1E293B;")
 
-        # Close button
-        self.close_button = QToolButton(self)
-        close_icon = QIcon()
-        close_icon.addFile(c.IMAGES_URL + "/close_btn.png")
-        self.close_button.setIcon(close_icon)
-        self.close_button.clicked.connect(self.parent.close)
+        self.content_layout_container.addWidget(loading_page)
 
-        # Normal button
-        self.normal_button = QToolButton(self)
-        self.normal_button.setIcon(max_icon)
-        self.normal_button.clicked.connect(self.change_window)
-        self.normal_button.setVisible(False)
-        buttons = [
-            self.min_button,
-            self.normal_button,
-            self.max_button,
-            self.close_button,
-        ]
-        for button in buttons:
-            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            button.setFixedSize(QSize(42, 42))
-            button.setIconSize(QSize(24, 24))
-            button.setStyleSheet("""QToolButton { 
-                                 border: none;
-                                 border-radius: 20px;}""" + "\n" + c.QTOOLBUTTON_HOVER
-            )
-            title_bar_layout.addWidget(button)
-        self.close_button.setStyleSheet(
-                """QToolButton { border: none;
-                                 border-radius: 20px;
-                                }
-                    QToolButton:hover {
-                    background-color:  rgba(229, 34, 34, 255); 
-                }""" )
+        # 設定預設顯示的頁面
+        self.content_layout_container.setCurrentIndex(0)
 
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._mouse_pos = event.globalPosition().toPoint()
+        # 把內容容器放到 main_layout，伸展係數=1 填滿剩餘空間
+        self.main_layout.addWidget(self.content_container, 1)
 
-    def mouseMoveEvent(self, event):
-        if self._mouse_pos is not None:
-            delta = event.globalPosition().toPoint() - self._mouse_pos
-            self.parent.move(self.parent.x() + delta.x(),
-                             self.parent.y() + delta.y())
-            self._mouse_pos = event.globalPosition().toPoint()
+        self.setCentralWidget(self.main_container)
 
-    def mouseReleaseEvent(self, event):
-        self._mouse_pos = None
-
-    def change_window(self,):
-        if self.is_parent_max:
-            self.is_parent_max = False
-            self.parent.showNormal()
-            self.max_button.setVisible(True)
-            self.normal_button.setVisible(False)
-        else:
-            self.parent.showMaximized()
-            self.is_parent_max = True
-            self.max_button.setVisible(False)
-            self.normal_button.setVisible(True)
+    def add_page(self, pages: list):
+        for pags in pages:
+            self.content_layout_container.addWidget(pags)
 
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)   # 建立應用程式物件
+    app.setFont(QFont(GLOBAL_FRONT))
     window = MainWindow()          # 建立主視窗
     window.show()                  # 顯示視窗
     sys.exit(app.exec())           # 進入事件迴圈
