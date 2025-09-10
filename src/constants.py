@@ -1,3 +1,4 @@
+#src/constants
 #INFO
 APP_VER = "0.0.1-beta.0.0.1"
 SYSTEM_NAME = "MPMC-UI-Helper"

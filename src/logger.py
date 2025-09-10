@@ -1,7 +1,7 @@
-from logging.handlers import RotatingFileHandler
+#src/loger.py
 import logging
 import os
-from colorama import Fore, Back, Style, init
+from datetime import datetime
 
 #####
 #🔥📌✅📂📄🔹🎨😃🚀❌🔧⚠📁🗑️🔇🛑🎙️🎤
@@ -20,103 +20,90 @@ C = {
     "r": "\033[0m"
 }
 
-
-# 初始化 colorama（Windows 也能支援 ANSI 色碼）
-init(autoreset=True)
-
-# 不同 log level 的顏色對應
-_LEVEL_COLORS = {
-    logging.DEBUG: Fore.CYAN,
-    logging.INFO: Fore.GREEN,
-    logging.WARNING: Fore.YELLOW,
-    logging.ERROR: Fore.RED,
-    # CRITICAL 只在以下 formatter 中特別處理
-}
-
-# 預設的格式字串
-_DEFAULT_FMT = "[{asctime}] [{name}] {level_color}{levelname}{reset} | {message}"
-_DATE_FMT = "%m/%d %H:%M"
-
-class LevelFormatter(logging.Formatter):
-    """依 record.levelno 動態套用顏色與格式，對 CRITICAL 進行全行背景紅色且訊息包 ❌"""
-
-    def __init__(self, fmt=_DEFAULT_FMT, datefmt=_DATE_FMT):
-        super().__init__(fmt=fmt, datefmt=datefmt, style='{')
+class levelFormatter(logging.Formatter):
+    """ 讓不同 Log Level 使用不同格式 """
+    def __init__(self, fmt_dict):
+        super().__init__()
+        self.fmt_dict = fmt_dict
+        self.default_fmt = fmt_dict.get(logging.DEBUG, "%(levelname)s: %(message)s")
 
     def format(self, record):
-        # 先讓 base class 填好 asctime, name, levelname, message
-        if record.levelno == logging.CRITICAL:
-            # 包裝訊息
-            message = f"❌{record.getMessage()}❌"
+        log_fmt = self.fmt_dict.get(record.levelno, self.default_fmt)
+        formatter = logging.Formatter(log_fmt,)
+        return formatter.format(record)
 
-            # 手動組好時間
-            asctime = self.formatTime(record, self.datefmt)
-            # 組出未上色的字串
-            text = f"[{asctime}] [{record.name}] {record.levelname} | {message}"
-            # 全行背景紅、前景白，最後 reset
-            return f"{Back.RED}{Fore.WHITE}{text}{Style.RESET_ALL}"
-        else:
-            # 非 CRITICAL 使用既有顏色對應
-            level_color = _LEVEL_COLORS.get(record.levelno, "")
-            reset = Style.RESET_ALL
-            record.level_color = level_color
-            record.reset = reset
-            # message 屬性預設就是 record.getMessage()
-            record.message = record.getMessage()
-            return super().format(record)
+class loggerFactory:
+    def __init__(self,
+                 logger_name: str = 'main',
+                 log_level: int | str = logging.DEBUG,
+                 write_log: bool = False,
+                 file_name: str = "log",
+                 path: str = "./logs"):
+        
+        if isinstance(log_level, str):
+            log_level = logging._nameToLevel.get(log_level, logging.INFO)
+        
+        self.write_log = write_log
+        log_path = os.path.join(os.getcwd(), path)
+        if not os.path.exists(log_path):
+            os.makedirs(log_path)
 
-def get_logger(
-    name: str = "main",
-    level: int = logging.DEBUG,
-    log_dir: str | None = None,
-    max_bytes: int = 10 * 1024 * 1024,
-    backup_count: int = 3,
-    format: str = None
-) -> logging.Logger:
-    """
-    建立並回傳一個 logger：
-    
-    - name: logger 名稱
-    - level: logging level
-    - log_dir: 若提供，會在此資料夾內建立 rotating file logs
-    - max_bytes、backup_count: 用於 RotatingFileHandler
-    """
+        
+        fname = datetime.now().strftime("%y-%m-%d-%H%M%S") + file_name + ".log"
 
-    logger = logging.getLogger(name)
-    if logger.handlers:
-        return logger  # 已初始化過，就直接回傳
-
-    logger.setLevel(level)
-    formatter = LevelFormatter()
-
-    # 1) Console handler
-    ch = logging.StreamHandler()
-    ch.setLevel(level)
-    ch.setFormatter(formatter)
-    logger.addHandler(ch)
-
-    # 2) File handler (若 log_dir 給定)
-    if log_dir:
-        os.makedirs(log_dir, exist_ok=True)
-        file_path = os.path.join(log_dir, f"{name}.log")
-        fh = RotatingFileHandler(
-            file_path,
-            maxBytes=max_bytes,
-            backupCount=backup_count,
-            encoding="utf-8"
-        )
-        fh.setLevel(level)
-        fh.setFormatter(formatter)
-        logger.addHandler(fh)
-
-    return logger
+        log_file = os.path.join(log_path, fname)
 
 
-# 範例測試
-if __name__ == "__main__":
-    log = get_logger()
-    log.debug("這是 debug 訊息")
-    log.info("這是 info 訊息")
-    log.warning("這是 warning 訊息")
-    log.error("這是 error 訊息")
-    log.critical("這是 critical 訊息")
+        self.logger = logging.getLogger(logger_name,)
+        self.logger.setLevel(log_level)
+
+        if not self.logger.handlers:
+
+            # 設定 Log 格式
+            log_formats = {
+                logging.DEBUG:    f'%(asctime)s [%(name)s] {C["cyan"]}[DEBUG] | %(message)s' + C["r"],
+                logging.INFO:     f'%(asctime)s [%(name)s] {C["green"]}[INFO]{C["r"]}  | %(message)s' + C["r"],
+                logging.WARNING:  f'%(asctime)s [%(name)s] {C["yellow"]}[WARN]  | %(message)s' + C["r"],
+                logging.ERROR:    f'%(asctime)s [%(name)s] {C["red"]}[ERROR] | %(message)s' + C["r"],
+                logging.CRITICAL: f'%(asctime)s [%(name)s] ❌{C["bg_red"] + C["white"]}[CRITICAL] | %(message)s' + C["r"] + "❌",
+            }
+            formatter = levelFormatter(log_formats)
+
+
+
+            # Console Handler (顯示在終端機)
+            # stream = open(sys.stdout.fileno(), mode='w', encoding='utf-8', buffering=1)
+
+            console_handler = logging.StreamHandler()
+            console_handler.setFormatter(formatter)
+
+            # 加入 Handler
+            if self.write_log:
+                print(f"Log file: {log_file}")
+                # File Handler (寫入檔案)
+                file_handler = logging.FileHandler(log_file, encoding="utf-8")
+                file_handler.setFormatter(formatter)
+                self.logger.addHandler(file_handler)
+            self.logger.addHandler(console_handler)
+
+    def getLogger(self):
+
+        return self.logger
+
+class testlog(loggerFactory):
+    def __init__(self):
+        super().__init__(write_log=True)
+        self.logger = self.getLogger()
+        self.logger.info("test✅✅")
+
+    def test(self):
+        self.logger.debug("debug")
+        self.logger.info("info✅✅")
+        self.logger.warning("warning")
+        self.logger.error("error")
+        self.logger.critical("critical")
+
+
+if __name__ == '__main__':
+    test = testlog()
+    test.test()
