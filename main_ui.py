@@ -1,6 +1,7 @@
 #main_ui.py
 import sys
 import time
+import keyring
 from PyQt6.QtCore import QObject, QThread, pyqtSignal, pyqtSlot, Qt, QEvent, QTimer, QSize, QSettings
 from PyQt6.QtGui import QPalette, QIcon, QFont
 from PyQt6.QtWidgets import (
@@ -33,10 +34,39 @@ class StartUp(QObject):
 
     @pyqtSlot(int)
     def run(self, start: int):
-        for i in range(start, 101):
-            time.sleep(2)
-            self.progress.emit({"signalId": "LoadingWorker", "value": i, "status": f"Loading... {i}%/100%"})
+        id = self.__class__.__name__
+        value = start
+        next_page = 1
+        username, token = self.load_user_info()
+        value += 10
+        self.emit_helper(id, value, "Loading User Info...")
+        time.sleep(1)  # 模擬載入使用者資訊時間
+        if username and token:
+            self.emit_helper(id, value + 10, "Logging in...")
+            time.sleep(1)  # 模擬登入時間
+            # 假設登入成功
+            self.emit_helper(id, value + 20, "Loading User Data...")
+            time.sleep(1)  # 模擬載入使用者資料時間
+            self.emit_helper(id, 100, "Welcome back!")
+            time.sleep(0.5)
+            next_page = 2  # 顯示主頁面
+        else:
+            self.emit_helper(id, None, "Welcome!, No user data found.")
+            for i in range(value, 101):
+                self.emit_helper(id, i, None)
+                time.sleep(0.02)
+        
+        self.show_next_page.emit(next_page)  # 顯示登入頁面
         self.finished.emit()
+
+    def emit_helper(self, id: str, value: int, status: str):
+        self.progress.emit({"signalId": id, "value": value, "status": status})
+
+    def load_user_info(self):
+        self.setting = QSettings("Private Minecraft Server", SYSTEM_NAME)
+        username = self.setting.value("username", "", type=str)
+        Token = keyring.get_password(SYSTEM_NAME, username) if username else ""
+        return username, Token
 
 # 建立主視窗類別
 class MainWindow(QMainWindow):
@@ -102,15 +132,15 @@ class MainWindow(QMainWindow):
 
         self.worker.progress.connect(self.loading_page.update_progress)
         self.worker.finished.connect(self.thread.quit)
+        self.worker.show_next_page.connect(self.show_page)
 
         # --- 啟動 ---
         self.thread.start()
 
         self.start_startup.connect(self.worker.run)
-        self.start_startup.emit(20)
+        self.start_startup.emit(25)
 
     def add_page(self, pages: list):
-        t = 25
         step = 25 // len(pages)
         i = 0
         for page in pages:
