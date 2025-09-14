@@ -1,9 +1,12 @@
 #src/constants
 #INFO
-APP_VER = "0.0.1-beta.0.0.1"
+# APP_VER = "0.0.1-beta.0.0.1"
+APP_VER     = "0.1.0"
 SYSTEM_NAME = "MPMC-UI-Helper"
+HEADER      = "C-MPMC-APP-Header"
 # URL
-BASE_API = r"https://mc.yyanc9.com/api/"
+# BASE_API = r"https://mc.yyanc9.com/api/"
+BASE_API = r"http://localhost:8080"
 IMAGES_URL = r"./src/images"
 GLOBAL_FRONT = r"./src/fonts"
 
