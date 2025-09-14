@@ -11,7 +11,7 @@ from logging import Logger
 from src.constants import BASE_API, APP_VER, HEADER
 
 class LoginPage(QWidget):
-    start_login = pyqtSignal(str, str)
+    start_login = pyqtSignal(str, str, requests.Session)
     show_next_page = pyqtSignal(int)
     def __init__(self, parent, logger: Logger):
         super().__init__(parent)
@@ -145,6 +145,8 @@ class LoginPage(QWidget):
         self.worker.finished.connect(self.thread.quit)
         self.worker.res.connect(self.handel_res)
         self.start_login.connect(self.worker.do_login)
+
+        self.show_next_page.connect(self.parent.show_page)
     
     def handle_login(self):
         username = self.u_inp.text()
@@ -153,7 +155,7 @@ class LoginPage(QWidget):
         self.login_btn.setText("Loading..")
         # 發送信號給外部去執行 Worker
         self.thread.start()
-        self.start_login.emit(username, password)
+        self.start_login.emit(username, password, self.parent.session)
 
     @pyqtSlot(dict)
     def handel_res(self, data: dict):
@@ -161,16 +163,168 @@ class LoginPage(QWidget):
 
         self.login_btn.setEnabled(True)
         self.login_btn.setText("LOGIN")
+        if data.get("next_page"):
+            self.show_next_page.emit(data.get("next_page"))
 
+class VerificationPage(QWidget):
+    start_verfiy = pyqtSignal(str, requests.Session)
+    show_next_page = pyqtSignal(int)
+    def __init__(self, parent, logger: Logger):
+        super().__init__(parent)
+        self.LOGGER = logger
+        self.parent = parent
+        self.setObjectName("Verification Page")
+        self.setStyleSheet("background-color: none;")
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(20)
+        root.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+
+        self.login_box = QWidget(self)
+        self.login_box.setFixedSize(501, 600)
+        self.login_box.setStyleSheet("""
+            background-color: #4B5870;
+            border-radius: 57px;
+        """)
+        box = QVBoxLayout(self.login_box)
+        box.setContentsMargins(40, 40, 40, 40)
+        box.setSpacing(20)
+        box.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        # 大字
+        title = QLabel("Enter Your Code.", self.login_box)
+        title.setStyleSheet("""
+            font-family: "Inter";
+            font-weight: 700;
+            font-size: 48px;
+            color: #FFFFFF;
+        """)
+
+        title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        box.addWidget(title)
+
+
+        # 小字
+        subtitle = QLabel("Who goes there? No password, no cookies.", self.login_box)
+        subtitle.setStyleSheet("""
+            font-family: "Inter";
+            font-weight: 500;
+            font-size: 20px;
+            color: #FFFFFF;
+        """)
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        box.addWidget(subtitle)
+
+        box.addSpacing(20)
+        self.code = QLineEdit(self.login_box)
+        self.code.setPlaceholderText("Your Verification Code: ")
+        self.code.setFixedHeight(70)
+        self.code.setStyleSheet("""
+            QLineEdit {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #D6D0FA, stop:1 #CFD9FB);
+                border: none;
+                border-radius: 20px;
+                font-family: "Inter";
+                font-weight: 400;
+                font-size: 16px;
+                color: #2A3448;
+                padding-left: 12px;
+            }
+        """)
+        box.addWidget(self.code)
+
+        self.sumbit = QPushButton("SUMBIT", self.login_box)
+        self.sumbit.setFixedSize(147, 59)
+        self.sumbit.setStyleSheet("""
+            QPushButton {
+                background-color: #00141A;
+                font-family: "Roboto";
+                font-weight: 500;
+                font-size: 28px;
+                color: #E8EBF2;
+                border: none;
+                border-radius: 20px;
+            }
+            QPushButton:hover {
+                background-color: #002A33;
+                border: none;
+                border-radius: 25px;
+            }
+        """)
+        # self.sumbit.clicked.connect(self.handle_sumbit)
+        box.addWidget(self.sumbit, 0, Qt.AlignmentFlag.AlignRight)
+
+        root.addWidget(self.login_box)
+
+        self.init_verify()
+
+    def init_verify(self,):
+        self.sumbit.clicked.connect(self.handle_sumbit)
+        self.verify_thread = QThread()
+        self.v = Verify()
+        self.v.moveToThread(self.verify_thread)
+
+        self.v.finished.connect(self.verify_thread.quit)
+        self.v.res.connect(self.handel_res)
+
+        self.start_verfiy.connect(self.v.do_verify)
+        self.show_next_page.connect(self.parent.show_page)
+
+    def handle_sumbit(self):
+        self.sumbit.setEnabled(False)
+        self.sumbit.setText("...")
+        code = self.code.text()
+        self.verify_thread.start()
+        self.start_verfiy.emit(code, self.parent.session)
+
+    @pyqtSlot(dict)
+    def handel_res(self, data: dict):
+        self.LOGGER.debug("Waiting....")
+        self.sumbit.setEnabled(True)
+        self.sumbit.setText("SUMBIT")
+
+class Verify(QObject):
+    res = pyqtSignal(dict)
+    finished = pyqtSignal()
+
+    @pyqtSlot(str, requests.Session)
+    def do_verify(self, code: str, s: requests.Session):
+        try:
+            data = {}
+            print(code)
+            payload = {"code":code}
+            headers = {"Content-Type": "application/json", }
+            response = s.post(BASE_API + "/Authentication/app/verify", json=payload, headers=headers, timeout=10)
+
+            if response.status_code == 200:
+                # 取得 cookie dict
+                cookie_dict = s.cookies.get_dict()
+                # 有時服務端還會在 headers 裡有 Set-Cookie
+                # requests/session 處理這部分會自動
+                data = response.json()  # 若有 JSON 回應
+
+                print({"success": True, "cookies": cookie_dict, "data": data})
+            else:
+                print({"success": False, "error": f"HTTP {response.status_code}", "cookies": {}})
+            self.res.emit(data)
+        except Exception as e:
+            self.res.emit({"Exception":e})
+            print(e)
+            pass
+        finally:
+            self.finished.emit()
+            pass
 
 class Login(QObject):
     res = pyqtSignal(dict)
     finished = pyqtSignal()
 
-    @pyqtSlot(str, str)
-    def do_login(self, username: str, password: str):
+    @pyqtSlot(str, str, requests.Session)
+    def do_login(self, username: str, password: str, s: requests.Session):
         try:
-            session = requests.Session()
+            session = s
 
             session.headers.update({
             "User-Agent": f"n-{APP_VER}-(mpmc client ua)",
@@ -196,6 +350,8 @@ class Login(QObject):
                 data = response.json()  # 若有 JSON 回應
 
                 print({"success": True, "cookies": cookie_dict, "data": data})
+            elif response.status_code == 202:
+                self.res.emit({"next_page":2})
             else:
                 print({"success": False, "error": f"HTTP {response.status_code}", "cookies": {}})
         except Exception as e:

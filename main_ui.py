@@ -2,6 +2,7 @@
 import sys
 import time
 import keyring
+import requests
 from PyQt6.QtCore import QObject, QThread, pyqtSignal, pyqtSlot, Qt, QEvent, QTimer, QSize, QSettings
 from PyQt6.QtGui import QPalette, QIcon, QFont
 from PyQt6.QtWidgets import (
@@ -52,6 +53,7 @@ class StartUp(QObject):
             next_page = 2  # 顯示主頁面
         else:
             self.emit_helper(id, None, "Welcome!, No user data found.")
+            
             for i in range(value, 101):
                 self.emit_helper(id, i, None)
                 time.sleep(0.02)
@@ -75,6 +77,7 @@ class MainWindow(QMainWindow):
     def __init__(self,  logger: Logger):
         self.LOGGER = logger
         self.LOGGER.info("✨ HI, from UI Init System ✨")
+        self.session = requests.session()
         super().__init__()
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.resize(1280, 720)
@@ -121,7 +124,8 @@ class MainWindow(QMainWindow):
 
     def load_pages(self):
         self.login_page = login_page.LoginPage(self, self.LOGGER)
-        pages = [self.login_page, ]
+        self.verify_page = login_page.VerificationPage(self, self.LOGGER)
+        pages = [self.login_page, self.verify_page]
         self.add_page(pages)
 
 
