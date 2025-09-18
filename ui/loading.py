@@ -23,6 +23,7 @@ class LoadingPage(QWidget):
         v.setSpacing(12)
         v.addStretch()
         self.label = QLabel("Loading...", self)
+        self.label.setWordWrap(True)
         self.label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self.label.setStyleSheet("""
                 background-color: none;

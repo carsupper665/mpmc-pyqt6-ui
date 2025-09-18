@@ -14,7 +14,7 @@
 
 # env file
 .env
-
+.vscode/
 #logs
 logs/*
 

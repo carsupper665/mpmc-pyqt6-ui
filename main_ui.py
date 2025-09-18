@@ -33,30 +33,72 @@ class StartUp(QObject):
     finished = pyqtSignal()
     show_next_page = pyqtSignal(int)
 
-    @pyqtSlot(int)
-    def run(self, start: int):
+    @pyqtSlot(int, requests.Session)
+    def run(self, start: int, s: requests.Session = None):
         id = self.__class__.__name__
         value = start
         next_page = 1
-        username, token = self.load_user_info()
+        username, token, device_id = self.load_user_info()
         value += 10
         self.emit_helper(id, value, "Loading User Info...")
         time.sleep(1)  # 模擬載入使用者資訊時間
-        if username and token:
+        print(f"Trying login with {username}, {token}, {device_id}")
+
+        if username and token and device_id:
+            ua = f"{username}-{APP_VER}-(mpmc client ua)"
+            self.session = s if s else requests.session()
             self.emit_helper(id, value + 10, "Logging in...")
-            time.sleep(1)  # 模擬登入時間
-            # 假設登入成功
-            self.emit_helper(id, value + 20, "Loading User Data...")
-            time.sleep(1)  # 模擬載入使用者資料時間
-            self.emit_helper(id, 100, "Welcome back!")
-            time.sleep(0.5)
-            next_page = 2  # 顯示主頁面
+            self.session.headers.update({
+                "User-Agent": ua,
+                "Authorization": f"Bearer {token}",
+                HEADER: device_id
+            })
+
+            print(ua)
+            try:
+                response = self.session.get(f"{BASE_API}/mc-api/client/getUserInfo")
+                # time.sleep(1)  # 模擬登入時間
+                if response.status_code != 200:
+                    self.session.headers.pop("User-Agent", None)
+                    # self.session.headers.pop(HEADER, None)
+                    self.session.headers.pop("Authorization", None)
+                    value += 35
+                    self.emit_helper(id, value, "Login failed, please login again.")
+                    next_page = 1  # 顯示登入頁面
+                    # time.sleep(1)
+                elif response.status_code == 200:
+                    # 假設登入成功
+                    value += 20
+                    self.emit_helper(id, value, "Loading User Data...")
+                    data = response.json()
+                    print(data)
+                    # time.sleep(1)  # 模擬載入使用者資料時間
+                    self.emit_helper(id, None, "Welcome back!")
+                    time.sleep(0.5)
+                    next_page = 2  # 顯示主頁面
+            except requests.RequestException as e:
+                self.session.headers.pop("User-Agent", None)
+                self.session.headers.pop("Authorization", None)
+                value += 35
+                self.emit_helper(id, value, f"Network error: {str(e)}")
+                print(e)
+                next_page = 1  # 顯示登入頁面
+                time.sleep(1)
+            except Exception as e:
+                # print(e.with_traceback())
+                print(e)
+                self.session.headers.pop("User-Agent", None)
+                self.session.headers.pop("Authorization", None)
+                value += 35
+                self.emit_helper(id, value, f"Login error: {str(e)}")
+                next_page = 1  # 顯示登入頁面
+                time.sleep(1)
         else:
             self.emit_helper(id, None, "Welcome!, No user data found.")
             
-            for i in range(value, 101):
-                self.emit_helper(id, i, None)
-                time.sleep(0.02)
+        for i in range(value + 1 , 101):
+            self.emit_helper(id, i, None)
+            time.sleep(0.02)
         
         self.show_next_page.emit(next_page)  # 顯示登入頁面
         self.finished.emit()
@@ -67,13 +109,15 @@ class StartUp(QObject):
     def load_user_info(self):
         self.setting = QSettings("Private Minecraft Server", SYSTEM_NAME)
         username = self.setting.value("username", "", type=str)
-        Token = keyring.get_password(SYSTEM_NAME, username) if username else ""
-        return username, Token
+        token = keyring.get_password(SYSTEM_NAME, username) if username else ""
+        device_id = keyring.get_password(SYSTEM_NAME, "device_id") if username else ""
+        return username, token, device_id
 
 # 建立主視窗類別
 class MainWindow(QMainWindow):
     progress = pyqtSignal(dict)
-    start_startup = pyqtSignal(int)
+    start_startup = pyqtSignal(int, requests.Session)
+    user_data = pyqtSignal(dict)
     def __init__(self,  logger: Logger):
         self.LOGGER = logger
         self.LOGGER.info("✨ HI, from UI Init System ✨")
@@ -84,7 +128,7 @@ class MainWindow(QMainWindow):
         self.create_main_window()
         self.set_content_container()
         self.load_pages()
-
+        # self.__reset()
         self.start_worker()
 
     def create_main_window(self):
@@ -142,7 +186,7 @@ class MainWindow(QMainWindow):
         self.thread.start()
 
         self.start_startup.connect(self.worker.run)
-        self.start_startup.emit(25)
+        self.start_startup.emit(25, self.session)  # 從25開始
 
     def add_page(self, pages: list):
         step = 25 // len(pages)
@@ -156,6 +200,12 @@ class MainWindow(QMainWindow):
     @pyqtSlot(int)
     def show_page(self, index: int):
         self.content_layout_container.setCurrentIndex(index)
+
+    def __reset(self):
+        setting = QSettings("Private Minecraft Server", SYSTEM_NAME)
+        setting.clear()
+        # self.session = requests.session()
+        keyring.delete_password(SYSTEM_NAME, "device_id")
 
 if __name__ == "__main__":
     LOGSYS = loggerFactory(logger_name="M.P.M.C-Helper", log_level="DEBUG", write_log=False, file_name="SYS-LOG")

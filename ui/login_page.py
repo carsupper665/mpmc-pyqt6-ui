@@ -2,13 +2,14 @@
 
 import time
 import requests
+import keyring
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel,
     QLineEdit, QPushButton
 )
-from PyQt6.QtCore import Qt, QObject, pyqtSignal, pyqtSlot, QThread
+from PyQt6.QtCore import Qt, QObject, pyqtSignal, pyqtSlot, QThread, QSettings
 from logging import Logger
-from src.constants import BASE_API, APP_VER, HEADER
+from src.constants import BASE_API, APP_VER, HEADER, SYSTEM_NAME
 
 class LoginPage(QWidget):
     start_login = pyqtSignal(str, str, requests.Session)
@@ -107,6 +108,7 @@ class LoginPage(QWidget):
             color: #FF6666;
         """)
         self.login_err.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.login_err.setWordWrap(True)
         box.addWidget(self.login_err)
 
         # Login 按鈕
@@ -151,6 +153,9 @@ class LoginPage(QWidget):
     def handle_login(self):
         username = self.u_inp.text()
         password = self.p_inp.text()
+        if password == "" or username == "":
+            self.login_err.setText(" 😠 😡 🤬: Username and password cannot be empty.")
+            return
         self.login_btn.setEnabled(False)
         self.login_btn.setText("Loading..")
         # 發送信號給外部去執行 Worker
@@ -165,6 +170,19 @@ class LoginPage(QWidget):
         self.login_btn.setText("LOGIN")
         if data.get("next_page"):
             self.show_next_page.emit(data.get("next_page"))
+        elif data.get("error") or data.get("Exception"):
+            err_msg = data.get("error") if data.get("error") else str(data.get("Exception"))
+            self.LOGGER.error("😢😭💔")
+            self.LOGGER.error(f"Login error: {err_msg}")
+            self.login_err.setText(f"😢😭💔 Error: {err_msg}")
+            self.p_inp.setText("")
+        if "data" in data:
+            if data["data"].get("token"):
+                setting = QSettings("Private Minecraft Server", SYSTEM_NAME)
+                setting.setValue("username", self.u_inp.text())
+                keyring.set_password(SYSTEM_NAME, self.u_inp.text(), data["data"].get("token", ""))
+                keyring.set_password(SYSTEM_NAME, "device_id", data["headers"].get(HEADER, ""))
+                self.show_next_page.emit(0)  # 返回到主頁面
 
 class VerificationPage(QWidget):
     start_verfiy = pyqtSignal(str, requests.Session)
@@ -281,7 +299,27 @@ class VerificationPage(QWidget):
 
     @pyqtSlot(dict)
     def handel_res(self, data: dict):
-        self.LOGGER.debug("Waiting....")
+        self.LOGGER.debug(f"Verification returned: {data}")
+        if "Exception" in data:
+            self.sumbit.setEnabled(True)
+            self.sumbit.setText("SUMBIT")
+            self.code.setText("")
+            self.code.setPlaceholderText("Error: " + str(data["Exception"]))
+            return
+        if "data" in data:
+            if data["data"].get("token"):
+                self.sumbit.setEnabled(False)
+                self.sumbit.setText("Loading...")
+                setting = QSettings("Private Minecraft Server", SYSTEM_NAME)
+                setting.setValue("username", self.parent.login_page.u_inp.text())
+                keyring.set_password(SYSTEM_NAME, self.parent.login_page.u_inp.text(), data["data"].get("token", ""))
+                keyring.set_password(SYSTEM_NAME, "device_id", data["headers"].get(HEADER, ""))
+                self.show_next_page.emit(0)  # 返回到主頁面
+            else:
+                self.sumbit.setEnabled(True)
+                self.sumbit.setText("SUMBIT")
+                self.code.setText("")
+                self.code.setPlaceholderText("Error: ")
         self.sumbit.setEnabled(True)
         self.sumbit.setText("SUMBIT")
 
@@ -297,25 +335,13 @@ class Verify(QObject):
             payload = {"code":code}
             headers = {"Content-Type": "application/json", }
             response = s.post(BASE_API + "/Authentication/app/verify", json=payload, headers=headers, timeout=10)
-
-            if response.status_code == 200:
-                # 取得 cookie dict
-                cookie_dict = s.cookies.get_dict()
-                # 有時服務端還會在 headers 裡有 Set-Cookie
-                # requests/session 處理這部分會自動
-                data = response.json()  # 若有 JSON 回應
-
-                print({"success": True, "cookies": cookie_dict, "data": data})
-            else:
-                print({"success": False, "error": f"HTTP {response.status_code}", "cookies": {}})
-            self.res.emit(data)
+            data = response.json()
+            headers = response.headers
+            self.res.emit({"data": data, "headers": headers})
         except Exception as e:
             self.res.emit({"Exception":e})
-            print(e)
-            pass
         finally:
             self.finished.emit()
-            pass
 
 class Login(QObject):
     res = pyqtSignal(dict)
@@ -325,10 +351,14 @@ class Login(QObject):
     def do_login(self, username: str, password: str, s: requests.Session):
         try:
             session = s
+            if not session.headers.get(HEADER):
+                print(session.headers.get(HEADER))
+                session.headers.update({
+                HEADER:"mpmc HUNS"})
 
             session.headers.update({
-            "User-Agent": f"n-{APP_VER}-(mpmc client ua)",
-            HEADER:"mpmc HUNS"})
+                "User-Agent": f"n-{APP_VER}-(mpmc client ua)"
+            })
 
             email = ""
 
@@ -345,19 +375,19 @@ class Login(QObject):
             if response.status_code == 200:
                 # 取得 cookie dict
                 cookie_dict = session.cookies.get_dict()
-                # 有時服務端還會在 headers 裡有 Set-Cookie
-                # requests/session 處理這部分會自動
                 data = response.json()  # 若有 JSON 回應
-
                 print({"success": True, "cookies": cookie_dict, "data": data})
+                self.res.emit({"data": data, "headers": response.headers})
             elif response.status_code == 202:
+                session.headers.update({
+                    HEADER: response.headers.get(HEADER, "")
+                })
                 self.res.emit({"next_page":2})
             else:
-                print({"success": False, "error": f"HTTP {response.status_code}", "cookies": {}})
+                self.res.emit({"error":f"status:{response.status_code} message:{response.text}"})
         except Exception as e:
-            pass
+            self.res.emit({"Exception":e})
         finally:
-            self.res.emit({})
             self.finished.emit()
         
 
