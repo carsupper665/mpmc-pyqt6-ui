@@ -37,7 +37,7 @@ class StartUp(QObject):
     def run(self, start: int, s: requests.Session = None):
         id = self.__class__.__name__
         value = start
-        next_page = 1
+        self.next_page = 1
         username, token, device_id = self.load_user_info()
         value += 10
         self.emit_helper(id, value, "Loading User Info...")
@@ -57,42 +57,39 @@ class StartUp(QObject):
             print(ua)
             try:
                 response = self.session.get(f"{BASE_API}/mc-api/client/getUserInfo")
-                # time.sleep(1)  # 模擬登入時間
                 if response.status_code != 200:
                     self.session.headers.pop("User-Agent", None)
-                    # self.session.headers.pop(HEADER, None)
                     self.session.headers.pop("Authorization", None)
                     value += 35
                     self.emit_helper(id, value, "Login failed, please login again.")
-                    next_page = 1  # 顯示登入頁面
-                    # time.sleep(1)
+                    self.next_page = 1  # 顯示登入頁面
                 elif response.status_code == 200:
-                    # 假設登入成功
                     value += 20
                     self.emit_helper(id, value, "Loading User Data...")
                     data = response.json()
                     print(data)
-                    # time.sleep(1)  # 模擬載入使用者資料時間
                     self.emit_helper(id, None, "Welcome back!")
                     time.sleep(0.5)
-                    next_page = 2  # 顯示主頁面
+                    self.next_page = 2  # 顯示主頁面
             except requests.RequestException as e:
-                self.session.headers.pop("User-Agent", None)
-                self.session.headers.pop("Authorization", None)
+                # self.session.headers.pop("User-Agent", None)
+                # self.session.headers.pop("Authorization", None)
                 value += 35
                 self.emit_helper(id, value, f"Network error: {str(e)}")
                 print(e)
-                next_page = 1  # 顯示登入頁面
+                self.next_page = 1  # 顯示登入頁面
                 time.sleep(1)
+                self.reconnect(id, 10, 5)
             except Exception as e:
-                # print(e.with_traceback())
                 print(e)
-                self.session.headers.pop("User-Agent", None)
-                self.session.headers.pop("Authorization", None)
+                # self.session.headers.pop("User-Agent", None)
+                # self.session.headers.pop("Authorization", None)
                 value += 35
                 self.emit_helper(id, value, f"Login error: {str(e)}")
-                next_page = 1  # 顯示登入頁面
+                # next_page = 1  # 顯示登入頁面
                 time.sleep(1)
+                self.emit_helper(id, None, "Retry at 10s.")
+                self.reconnect(id, 10, 5)
         else:
             self.emit_helper(id, None, "Welcome!, No user data found.")
             
@@ -100,8 +97,46 @@ class StartUp(QObject):
             self.emit_helper(id, i, None)
             time.sleep(0.02)
         
-        self.show_next_page.emit(next_page)  # 顯示登入頁面
+        self.show_next_page.emit(self.next_page)
         self.finished.emit()
+
+    def reconnect(self, id: str, times: int = 5, retry_time: int = 1):
+        if retry_time <= 0:
+            return
+
+        for i in range(times, 0, -1):
+            time.sleep(1)
+            self.emit_helper(id, None, f"Reconnect after {i}s")
+
+        try:
+            self.emit_helper(id, None, "Reconnecting...")
+            response = self.session.get(f"{BASE_API}/mc-api/client/getUserInfo")
+            if response.status_code in [200, 502, 401, 403]:
+                if response.status_code == 200:
+                    self.emit_helper(id, None, "Welcome back!")
+                    self.next_page = 2
+                    retry_time = -1
+                    return
+                else:
+                    self.emit_helper(id, None, "Login failed, please login again.")
+                    self.next_page = 1
+                    retry_time = -1
+                    return
+            else:
+                self.emit_helper(id, None, f"Reconnect failed: {response.status_code}")
+        except Exception as e:
+            self.emit_helper(id, None, f"Reconnect Failed: {str(e)}")
+            time.sleep(0.5)
+        finally:
+            retry_time -= 1
+            times += 5
+            
+            if retry_time > 0:
+                self.reconnect(id, times, retry_time)
+                return
+            
+            self.session.headers.pop("User-Agent", None)
+            self.session.headers.pop("Authorization", None)
 
     def emit_helper(self, id: str, value: int, status: str):
         self.progress.emit({"signalId": id, "value": value, "status": status})
