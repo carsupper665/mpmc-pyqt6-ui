@@ -182,7 +182,7 @@ class LoginPage(QWidget):
                 setting.setValue("username", self.u_inp.text())
                 keyring.set_password(SYSTEM_NAME, self.u_inp.text(), data["data"].get("token", ""))
                 keyring.set_password(SYSTEM_NAME, "device_id", data["headers"].get(HEADER, ""))
-                self.show_next_page.emit(0)  # 返回到主頁面
+                self.show_next_page.emit(3)  # 返回到主頁面
 
 class VerificationPage(QWidget):
     start_verfiy = pyqtSignal(str, requests.Session)

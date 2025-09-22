@@ -1,4 +1,4 @@
-#ui/my_server_page.py
+#ui/add_server_page.py
 import time
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel,
@@ -8,24 +8,21 @@ from PyQt6.QtCore import Qt, QObject, pyqtSignal, pyqtSlot, QThread, QSettings
 from logging import Logger
 from src.constants import BASE_API, APP_VER, HEADER, SYSTEM_NAME
 
-
-class MyServerPage(QWidget):
+class AddServerPage(QWidget):
     def __init__(self, parent, logger: Logger):
         super().__init__(parent)
         self.LOGGER = logger
 
         self.p = self.parent()
 
-        self.setObjectName("MyServerPage")
+        self.setObjectName("AddServerPage")
 
         self.page_layout = QHBoxLayout(self)
-        
-        self.LOGGER.debug("🛠 My Server Page is ready!")
 
         self.setAutoFillBackground(True)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet("""      
-                #MyServerPage {
+                #AddServerPage {
                     background: #1E1E2F;
                     border-right: 1px solid #4B5870;
                 }
@@ -43,7 +40,7 @@ class MyServerPage(QWidget):
         title_layout = QHBoxLayout()
         title_layout.setContentsMargins(0, 0, 0, 0)
         title_layout.setSpacing(8)
-        title = QLabel("My Server", self)
+        title = QLabel("Add ServerP", self)
         title.setStyleSheet("""
             font-family: "Inter";
             font-size: 32px;

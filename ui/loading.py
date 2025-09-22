@@ -18,6 +18,7 @@ class LoadingPage(QWidget):
     def __init__(self, parent, logger: Logger):
         self.LOGGER = logger
         super().__init__(parent)
+        self.setObjectName(self.__class__.__name__)
         v = QVBoxLayout(self)
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(12)

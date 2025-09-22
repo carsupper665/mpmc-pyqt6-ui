@@ -14,6 +14,7 @@ class CustomTitleBar(QWidget):
     def __init__(self, parent):
         super().__init__()
         self.is_parent_max = False
+        self.setObjectName(self.__class__.__name__)
         self.parent = parent
         self.setAutoFillBackground(True)
         self.setBackgroundRole(QPalette.ColorRole.Highlight)

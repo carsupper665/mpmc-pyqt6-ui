@@ -32,6 +32,7 @@ QPROGRESSBAR = """
             }
         """
 # Page index
-LOGIN_PAGE = 0
-MY_SERVER_PAGE = 3
+LOGIN_PAGE = 1
+# ---------------
+MY_SERVER_PAGE = 1
 ADD_SERVER_PAGE = 2

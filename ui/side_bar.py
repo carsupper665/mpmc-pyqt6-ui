@@ -19,7 +19,7 @@ class SideBar(QWidget):
 
     nav_clicked = pyqtSignal(int)
 
-    def __init__(self, parent):
+    def __init__(self, parent,):
         super().__init__(parent)
         self.parent = parent
         self.setObjectName("SideBar")
@@ -115,17 +115,17 @@ class SideBar(QWidget):
 
     def _handle_action(self, btn: QToolButton):
         text = btn.text().lower()
-        if "logout" in text:
-            # best-effort: call parent.logout if exists
-            if hasattr(self.parent, "logout"):
-                try:
-                    self.parent.logout()
-                except Exception:
-                    pass
+        if hasattr(self.parent, "logout"):
+            try:
+                self.parent.LOGGER.warning("logout")
+                self.parent.logout()
+            except Exception as e:
+                self.parent.LOGGER.error(f"Logout Fail. error: {e}")
 
     def set_active(self, page_index: int):
         for b in self.buttons:
             try:
                 b.setChecked(b.page_index == page_index)
-            except Exception:
+            except Exception as e:
+                print(e)
                 b.setChecked(False)

@@ -21,7 +21,7 @@ from src.logger import loggerFactory
 
 from ui.custom_title import CustomTitleBar
 from ui.loading import LoadingPage
-from ui import login_page, my_server_page
+from ui import login_page, my_server_page, tab_page
 
 from logging import Logger
 
@@ -31,10 +31,11 @@ class MainWindow(QMainWindow):
     start_startup = pyqtSignal(int, requests.Session)
     user_data = pyqtSignal(dict)
     def __init__(self,  logger: Logger):
+        super().__init__()
         self.LOGGER = logger
         self.LOGGER.info("✨ HI, from UI Init System ✨")
+        self.setObjectName(self.__class__.__name__)
         self.session = requests.session()
-        super().__init__()
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.resize(1280, 720)
         self.create_main_window()
@@ -81,14 +82,14 @@ class MainWindow(QMainWindow):
     def load_pages(self):
         self.login_page = login_page.LoginPage(self, self.LOGGER)
         self.verify_page = login_page.VerificationPage(self, self.LOGGER)
-        self.my_server_page = my_server_page.MyServerPage(self, self.LOGGER)
+        self.page_tab = tab_page.TabPage(self, self.LOGGER)
 
-        pages = [self.login_page, self.verify_page, self.my_server_page]
+        pages = [self.login_page, self.verify_page, self.page_tab]
         self.add_page(pages)
 
     def start_worker(self):
         self.thread = QThread(self)
-        self.worker = StartUp()
+        self.worker = StartUp(self.LOGGER)
         self.worker.moveToThread(self.thread)
 
         self.worker.progress.connect(self.loading_page.update_progress)
@@ -114,11 +115,12 @@ class MainWindow(QMainWindow):
     def show_page(self, index: int):
         self.content_layout_container.setCurrentIndex(index)
 
-    def __reset(self):
+    def logout(self):
         setting = QSettings("Private Minecraft Server", SYSTEM_NAME)
         setting.clear()
-        # self.session = requests.session()
-        keyring.delete_password(SYSTEM_NAME, "device_id")
+        # keyring.delete_password(SYSTEM_NAME, "device_id")
+
+        self.content_layout_container.setCurrentIndex(LOGIN_PAGE)
 
 class StartUp(QObject):
     # 進度條分配 載入頁面(25)->載入登入資訊(25)->登入(25)->載入使用者資料(25)->100
@@ -126,6 +128,10 @@ class StartUp(QObject):
     progress = pyqtSignal(dict)
     finished = pyqtSignal()
     show_next_page = pyqtSignal(int)
+
+    def __init__(self, logger: Logger):
+        super().__init__()
+        self.LOGGER = logger
 
     @pyqtSlot(int, requests.Session)
     def run(self, start: int, s: requests.Session = None):
@@ -135,11 +141,13 @@ class StartUp(QObject):
         username, token, device_id = self.load_user_info()
         value += 10
         self.emit_helper(id, value, "Loading User Info...")
-        time.sleep(1)  # 模擬載入使用者資訊時間
-        print(f"Trying login with {username}, {token}, {device_id}")
+
+        self.LOGGER.debug(f"Loading User info.")
+
+        ua = f"{username}-{APP_VER}-(mpmc client ua)"
+        self.LOGGER.debug(f"User Info, UA:{ua}/Username:{username}/DeviceId:{device_id}/Client Ver:{APP_VER}")
 
         if username and token and device_id:
-            ua = f"{username}-{APP_VER}-(mpmc client ua)"
             self.session = s if s else requests.session()
             self.emit_helper(id, value + 10, "Logging in...")
             self.session.headers.update({
@@ -148,20 +156,28 @@ class StartUp(QObject):
                 HEADER: device_id
             })
 
-            print(ua)
             try:
                 response = self.session.get(f"{BASE_API}/mc-api/client/getUserInfo")
+                data = response.json()
                 if response.status_code != 200:
+                    self.LOGGER.info(f"Login Fail...")
+
                     self.session.headers.pop("User-Agent", None)
                     self.session.headers.pop("Authorization", None)
+
                     value += 35
                     self.emit_helper(id, value, "Login failed, please login again.")
                     self.next_page = 1  # 顯示登入頁面
+                    error = data.get("error", "")
+
+                    if error != "":
+                        self.LOGGER.error(f"Login HTPPS error: {error}")
+
+                    time.sleep(1)
                 elif response.status_code == 200:
                     value += 20
                     self.emit_helper(id, value, "Loading User Data...")
-                    data = response.json()
-                    print(data)
+                    self.LOGGER.debug(f"Data: {data}")
                     self.emit_helper(id, None, "Welcome back!")
                     time.sleep(0.5)
                     self.next_page = 3  # 顯示主頁面
@@ -185,6 +201,11 @@ class StartUp(QObject):
                 self.emit_helper(id, None, "Retry at 10s.")
                 self.reconnect(id, 10, 5)
         else:
+            self.session = s if s else requests.session()
+            if device_id:
+                self.session.headers.update({
+                    HEADER: device_id
+                })
             self.emit_helper(id, None, "Welcome!, No user data found.")
             
         for i in range(value + 1 , 101):
@@ -208,7 +229,7 @@ class StartUp(QObject):
             if response.status_code in [200, 502, 401, 403]:
                 if response.status_code == 200:
                     self.emit_helper(id, None, "Welcome back!")
-                    self.next_page = 2
+                    self.next_page = 3
                     retry_time = -1
                     return
                 else:
@@ -237,9 +258,9 @@ class StartUp(QObject):
 
     def load_user_info(self):
         self.setting = QSettings("Private Minecraft Server", SYSTEM_NAME)
-        username = self.setting.value("username", "", type=str)
-        token = keyring.get_password(SYSTEM_NAME, username) if username else ""
-        device_id = keyring.get_password(SYSTEM_NAME, "device_id") if username else ""
+        username = self.setting.value("username", None, type=str)
+        token = keyring.get_password(SYSTEM_NAME, username)
+        device_id = keyring.get_password(SYSTEM_NAME, "device_id")
         return username, token, device_id
 
 
